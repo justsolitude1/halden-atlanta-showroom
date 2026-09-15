@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Halden — Atlanta Motor Gallery</title>
+  <meta name="description" content="Halden is a private motor gallery on Atlanta's Westside. Three machines, one room: the 1965 Ford Mustang, the 2019 Honda NSX and the 2020 Ferrari Roma.">
+  <meta name="theme-color" content="#070708">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23070708%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-family=%27Arial%27 font-weight=%27700%27 font-size=%2716%27 fill=%27%23ece7dd%27 text-anchor=%27middle%27%3EH%3C/text%3E%3C/svg%3E">
+  <!-- Fonts are self-hosted; only the faces visible on first paint are preloaded. -->
+  <link rel="preload" href="fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/instrument-serif-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- The first car starts downloading in parallel with the script. Media queries match the mobile check in js/main.js. -->
+  <link rel="preload" href="models/mustang.glb" as="fetch" crossorigin media="(min-width: 901px) and (pointer: fine)">
+  <link rel="preload" href="models/mobile/mustang.glb" as="fetch" crossorigin media="(max-width: 900px), (pointer: coarse)">
+  <link rel="modulepreload" href="dist/app.js">
+</head>
+<body>
+  <canvas id="stage" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="hotspots" id="hotspots" aria-hidden="true"></div>
+  <div class="pending" id="pending" role="status" hidden><i></i>Bringing the car onto the floor</div>
+
+  <!-- ───────────── Chrome ───────────── -->
+  <header class="nav">
+    <a class="nav__mark" href="#hero" data-goto="hero" aria-label="Halden, back to top">HALDEN</a>
+    <div class="nav__chapter" aria-hidden="true">
+      <span class="nav__num" id="navNum">00</span>
+      <span class="nav__sep"></span>
+      <span class="nav__name" id="navName">Arrival</span>
+    </div>
+    <a class="btn btn--ghost nav__cta" href="#visit" data-goto="visit">Book a viewing</a>
+    <div class="nav__progress"><i id="navProgress"></i></div>
+  </header>
+
+  <nav class="rail" aria-label="Chapters">
+    <button data-goto="hero"    aria-label="Arrival"><span>Arrival</span></button>
+    <button data-goto="mustang" aria-label="1965 Ford Mustang"><span>'65 Mustang</span></button>
+    <button data-goto="nsx"     aria-label="2019 Honda NSX"><span>'19 NSX</span></button>
+    <button data-goto="roma"    aria-label="2020 Ferrari Roma"><span>'20 Roma</span></button>
+    <button data-goto="lineup"  aria-label="The line-up"><span>Line-up</span></button>
+    <button data-goto="visit"   aria-label="Visit"><span>Visit</span></button>
+  </nav>
+
+  <main>
+    <!-- ───────────── 00 Hero ───────────── -->
+    <section class="hero" id="hero" data-chapter="00" data-name="Arrival">
+      <div class="hero__meta">
+        <span>Private motor gallery</span>
+        <span>Westside · Atlanta, GA</span>
+        <span>By appointment</span>
+      </div>
+      <h1 class="hero__title">
+        <span class="line"><span>Three machines.</span></span>
+        <span class="line line--serif"><span><em>One room in Atlanta.</em></span></span>
+      </h1>
+      <div class="hero__foot">
+        <p class="hero__lede">Sixty years of speed from three countries, lit like a gallery and parked inside the Perimeter.</p>
+        <div class="hero__status">
+          <div class="boot" id="loader" role="status" aria-live="polite">
+            <span class="boot__label">Warming up the room</span>
+            <span class="boot__pct"><span id="loaderPct">0</span>%</span>
+            <span class="boot__bar"><i id="loaderBar"></i></span>
+          </div>
+          <div class="scrollcue"><i></i><span>Scroll to turn on the lights</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Intro manifesto ───────────── -->
+    <section class="intro" id="intro" data-sticky data-chapter="00" data-name="Arrival">
+      <div class="intro__pin">
+        <p class="eyebrow">The collection</p>
+        <p class="intro__text" id="introText">Some cars are bought. These were chosen. A Dearborn original, an Ohio-built hybrid and a grand tourer from Maranello: three answers to the same question, kept under one roof on Atlanta's Westside.</p>
+      </div>
+    </section>
+
+    <!-- ───────────── I · Mustang ───────────── -->
+    <section class="chapter" id="mustang" data-sticky data-car="0" data-chapter="01" data-name="1965 Ford Mustang" style="--acc:#7f9cf0">
+      <div class="chapter__pin">
+        <div class="chapter__head">
+          <span class="chapter__numeral">I</span>
+          <div>
+            <p class="chapter__model">1965 Ford Mustang</p>
+            <p class="chapter__origin">Dearborn, Michigan · United States</p>
+          </div>
+        </div>
+
+        <div class="steps">
+          <article class="step" data-step="0">
+            <p class="eyebrow">Chapter one</p>
+            <h2 class="step__title">The one that started <em>the stampede.</em></h2>
+            <p class="step__body">Unveiled at the New York World's Fair on April 17, 1964, it invented a whole category overnight. People still call it the pony car.</p>
+          </article>
+          <article class="step" data-step="1">
+            <p class="step__figure"><span data-count="289">289</span><small>cu in</small></p>
+            <h2 class="step__title step__title--sm">Small-block V8</h2>
+            <p class="step__body">In K-code "Hi-Po" trim the 289 made 271 horsepower. It revs high, sounds glorious and has no electronics to hide behind.</p>
+          </article>
+          <article class="step" data-step="2">
+            <p class="eyebrow">Proportion</p>
+            <h2 class="step__title">Long hood. <em>Short deck.</em></h2>
+            <p class="step__body">Every pony car since has borrowed that silhouette. It still turns heads at a light on Peachtree.</p>
+          </article>
+          <article class="step" data-step="3">
+            <p class="eyebrow">Configure</p>
+            <h2 class="step__title">Choose the <em>colour.</em></h2>
+            <p class="step__body">Period-correct 1965 paint. Tap a swatch and the car changes on the floor.</p>
+          </article>
+        </div>
+
+        <div class="swatches" data-car="0" role="radiogroup" aria-label="Mustang paint">
+          <button role="radio" aria-checked="true"  style="--c:#0f1f4d" data-hex="#0f1f4d" data-metal="0.45" data-rough="0.32"><span>Nightmist Blue</span></button>
+          <button role="radio" aria-checked="false" style="--c:#c8261d" data-hex="#b3190f" data-metal="0.05" data-rough="0.38"><span>Poppy Red</span></button>
+          <button role="radio" aria-checked="false" style="--c:#ebe7dc" data-hex="#e6e1d4" data-metal="0.0"  data-rough="0.4"><span>Wimbledon White</span></button>
+          <button role="radio" aria-checked="false" style="--c:#2d8b8d" data-hex="#1f7478" data-metal="0.35" data-rough="0.34"><span>Twilight Turquoise</span></button>
+          <button role="radio" aria-checked="false" style="--c:#111"    data-hex="#060606" data-metal="0.1"  data-rough="0.3"><span>Raven Black</span></button>
+        </div>
+
+        <dl class="specs">
+          <div><dt>Year</dt><dd>1965</dd></div>
+          <div><dt>Engine</dt><dd>4.7 L V8</dd></div>
+          <div><dt>Output</dt><dd>271 hp <sup>K-code</sup></dd></div>
+          <div><dt>Drive</dt><dd>Front-engine · RWD</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ───────────── II · NSX ───────────── -->
+    <section class="chapter" id="nsx" data-sticky data-car="1" data-chapter="02" data-name="2019 Honda NSX" style="--acc:#ff7a1f">
+      <div class="chapter__pin">
+        <div class="chapter__head">
+          <span class="chapter__numeral">II</span>
+          <div>
+            <p class="chapter__model">2019 Honda NSX</p>
+            <p class="chapter__origin">Marysville, Ohio · Sold here as the Acura NSX</p>
+          </div>
+        </div>
+
+        <div class="steps">
+          <article class="step" data-step="0">
+            <p class="eyebrow">Chapter two</p>
+            <h2 class="step__title">A supercar that <em>learned to think.</em></h2>
+            <p class="step__body">A twin-turbo V6 and three electric motors, hand-assembled at the Performance Manufacturing Center in Marysville, Ohio.</p>
+          </article>
+          <article class="step" data-step="1">
+            <p class="step__figure"><span data-count="573">573</span><small>hp combined</small></p>
+            <h2 class="step__title step__title--sm">3.5 L twin-turbo V6, mid-mounted</h2>
+            <p class="step__body">One motor sits between the engine and gearbox. Two more drive the front wheels on their own, pulling the nose into corners.</p>
+          </article>
+          <article class="step" data-step="2">
+            <p class="step__figure"><span data-count="9">9</span><small>speed dual-clutch</small></p>
+            <h2 class="step__title step__title--sm">Sport Hybrid SH-AWD</h2>
+            <p class="step__body">Gears change in milliseconds and torque-vectoring works quietly underneath. It feels less like a hybrid and more like a very fast conversation.</p>
+          </article>
+          <article class="step" data-step="3">
+            <p class="eyebrow">Configure</p>
+            <h2 class="step__title">Pick a <em>pearl.</em></h2>
+            <p class="step__body">2019 model-year paint, including the Thermal Orange this car wears.</p>
+          </article>
+        </div>
+
+        <div class="swatches" data-car="1" role="radiogroup" aria-label="NSX paint">
+          <button role="radio" aria-checked="true"  style="--c:#ff6a0d" data-hex="#ff5a00" data-metal="0.35" data-rough="0.22"><span>Thermal Orange Pearl</span></button>
+          <button role="radio" aria-checked="false" style="--c:#a3141c" data-hex="#8f0a12" data-metal="0.45" data-rough="0.25"><span>Valencia Red Pearl</span></button>
+          <button role="radio" aria-checked="false" style="--c:#6d737a" data-hex="#5b6168" data-metal="0.7"  data-rough="0.3"><span>Nord Gray Metallic</span></button>
+          <button role="radio" aria-checked="false" style="--c:#eceae4" data-hex="#e8e6df" data-metal="0.2"  data-rough="0.28"><span>Casino White Pearl</span></button>
+          <button role="radio" aria-checked="false" style="--c:#0c0c0c" data-hex="#050505" data-metal="0.3"  data-rough="0.25"><span>Berlina Black</span></button>
+        </div>
+
+        <dl class="specs">
+          <div><dt>Year</dt><dd>2019</dd></div>
+          <div><dt>Engine</dt><dd>3.5 L TT V6 + 3 motors</dd></div>
+          <div><dt>Output</dt><dd>573 hp</dd></div>
+          <div><dt>Drive</dt><dd>Mid-engine · AWD</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ───────────── III · Roma ───────────── -->
+    <section class="chapter" id="roma" data-sticky data-car="2" data-chapter="03" data-name="2020 Ferrari Roma" style="--acc:#e0242e">
+      <div class="chapter__pin">
+        <div class="chapter__head">
+          <span class="chapter__numeral">III</span>
+          <div>
+            <p class="chapter__model">2020 Ferrari Roma</p>
+            <p class="chapter__origin">Maranello · Italy</p>
+          </div>
+        </div>
+
+        <div class="steps">
+          <article class="step" data-step="0">
+            <p class="eyebrow">Chapter three</p>
+            <h2 class="step__title">Unhurried. <em>Devastating.</em></h2>
+            <p class="step__body">Unveiled in Rome in November 2019, it chose a long, clean line over a spoiler. It is the quiet one in the room.</p>
+          </article>
+          <article class="step" data-step="1">
+            <p class="step__figure"><span data-count="620">620</span><small>cv</small></p>
+            <h2 class="step__title step__title--sm">3.9 L twin-turbo V8, front-mid</h2>
+            <p class="step__body">The V8 sits behind the front axle and sends 612 horsepower to the rear wheels through an eight-speed dual-clutch.</p>
+          </article>
+          <article class="step" data-step="2">
+            <p class="step__figure"><span data-count="3.4" data-decimals="1">3.4</span><small>sec · 0–100 km/h</small></p>
+            <h2 class="step__title step__title--sm">Beyond 320 km/h</h2>
+            <p class="step__body">Almost none of that speed is needed on I-85. That is rather the point.</p>
+          </article>
+          <article class="step" data-step="3">
+            <p class="eyebrow">Configure</p>
+            <h2 class="step__title">Dress it <em>for dinner.</em></h2>
+            <p class="step__body">Five classic Maranello colours, from Rosso Corsa to Nero Daytona.</p>
+          </article>
+        </div>
+
+        <div class="swatches" data-car="2" role="radiogroup" aria-label="Roma paint">
+          <button role="radio" aria-checked="true"  style="--c:#d01f24" data-hex="#b5080e" data-metal="0.08" data-rough="0.3"><span>Rosso Corsa</span></button>
+          <button role="radio" aria-checked="false" style="--c:#40464e" data-hex="#30353b" data-metal="0.75" data-rough="0.3"><span>Grigio Silverstone</span></button>
+          <button role="radio" aria-checked="false" style="--c:#1d3a66" data-hex="#142b52" data-metal="0.55" data-rough="0.3"><span>Blu Tour de France</span></button>
+          <button role="radio" aria-checked="false" style="--c:#f0efe9" data-hex="#ecebe4" data-metal="0.05" data-rough="0.32"><span>Bianco Avus</span></button>
+          <button role="radio" aria-checked="false" style="--c:#0a0a0c" data-hex="#040405" data-metal="0.45" data-rough="0.25"><span>Nero Daytona</span></button>
+        </div>
+
+        <dl class="specs">
+          <div><dt>Year</dt><dd>2020</dd></div>
+          <div><dt>Engine</dt><dd>3.9 L TT V8</dd></div>
+          <div><dt>Output</dt><dd>612 hp · 620 cv</dd></div>
+          <div><dt>Drive</dt><dd>Front-mid · RWD</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ───────────── Line-up ───────────── -->
+    <section class="lineup" id="lineup" data-sticky data-chapter="04" data-name="The line-up">
+      <div class="lineup__pin">
+        <div class="lineup__head">
+          <p class="eyebrow">The line-up</p>
+          <h2 class="lineup__title">Sixty years. <em>Three accents.</em></h2>
+        </div>
+        <div class="table" role="table" aria-label="Collection comparison">
+          <div class="table__row table__row--head" role="row">
+            <span role="columnheader"></span>
+            <span role="columnheader" style="--acc:#7f9cf0">'65 Mustang</span>
+            <span role="columnheader" style="--acc:#ff7a1f">'19 NSX</span>
+            <span role="columnheader" style="--acc:#e0242e">'20 Roma</span>
+          </div>
+          <div class="table__row" role="row">
+            <span role="rowheader">Built in</span>
+            <span role="cell">Dearborn, MI</span><span role="cell">Marysville, OH</span><span role="cell">Maranello, IT</span>
+          </div>
+          <div class="table__row" role="row">
+            <span role="rowheader">Engine</span>
+            <span role="cell">4.7 L V8</span><span role="cell">3.5 L TT V6 hybrid</span><span role="cell">3.9 L TT V8</span>
+          </div>
+          <div class="table__row" role="row">
+            <span role="rowheader">Layout</span>
+            <span role="cell">Front · RWD</span><span role="cell">Mid · AWD</span><span role="cell">Front-mid · RWD</span>
+          </div>
+          <div class="table__row table__row--bars" role="row">
+            <span role="rowheader">Horsepower</span>
+            <span role="cell" style="--acc:#7f9cf0;--v:271"><i></i><b data-count="271">271</b></span>
+            <span role="cell" style="--acc:#ff7a1f;--v:573"><i></i><b data-count="573">573</b></span>
+            <span role="cell" style="--acc:#e0242e;--v:612"><i></i><b data-count="612">612</b></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────── Visit ───────────── -->
+    <section class="visit" id="visit" data-chapter="05" data-name="Visit">
+      <div class="visit__grid">
+        <div class="visit__copy">
+          <p class="eyebrow">Visit</p>
+          <h2 class="visit__title">Inside the Perimeter. <em>Outside the ordinary.</em></h2>
+          <p class="visit__lede">Halden is one quiet room on Atlanta's Westside with no sales floor and no rush. Book an hour with the collection, and the coffee is on us.</p>
+
+          <dl class="visit__facts">
+            <div><dt>Where</dt><dd>Westside, Atlanta, GA<br><span class="muted">Exact address shared on booking</span></dd></div>
+            <div><dt>Hours</dt><dd>Tue – Sat · 10:00 – 19:00<br><span class="muted">Sundays by private arrangement</span></dd></div>
+            <div><dt>Call</dt><dd><a href="tel:+14045550142">(404) 555-0142</a></dd></div>
+          </dl>
+
+          <svg class="perimeter" viewBox="0 0 320 320" role="img" aria-label="Map sketch: Halden sits inside Atlanta's I-285 Perimeter, west of Midtown">
+            <path class="perimeter__ring" d="M160 22c58 0 92 18 116 52s32 64 26 104-24 70-58 92-78 30-118 20-72-32-92-66S12 150 26 110 64 44 96 32s42-10 64-10z"/>
+            <path class="perimeter__road" d="M150 20 L168 300"/>
+            <path class="perimeter__road" d="M28 150 L300 176"/>
+            <path class="perimeter__road" d="M166 160 L262 64"/>
+            <circle class="perimeter__city" cx="164" cy="162" r="4"/>
+            <circle class="perimeter__pin" cx="140" cy="146" r="7"/>
+            <circle class="perimeter__pulse" cx="140" cy="146" r="7"/>
+            <text x="176" y="176" class="perimeter__label">Downtown</text>
+            <text x="92" y="130" class="perimeter__label perimeter__label--acc">Halden</text>
+            <text x="238" y="40" class="perimeter__label perimeter__label--dim">I-285</text>
+          </svg>
+        </div>
+
+        <form class="book" id="bookForm" novalidate>
+          <p class="book__title">Request a private viewing</p>
+          <label class="field">
+            <span>Full name</span>
+            <input name="name" autocomplete="name" required>
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input name="email" type="email" autocomplete="email" required>
+          </label>
+          <fieldset class="field field--chips">
+            <legend>I'd like to see</legend>
+            <label><input type="checkbox" name="car" value="mustang" checked><span>'65 Mustang</span></label>
+            <label><input type="checkbox" name="car" value="nsx"><span>'19 NSX</span></label>
+            <label><input type="checkbox" name="car" value="roma"><span>'20 Roma</span></label>
+          </fieldset>
+          <label class="field">
+            <span>Preferred date</span>
+            <input name="date" type="date">
+          </label>
+          <button class="btn btn--solid" type="submit">Request viewing <span aria-hidden="true">→</span></button>
+          <p class="book__note" id="bookNote" role="status"></p>
+        </form>
+      </div>
+
+      <footer class="footer">
+        <div class="footer__mark" aria-hidden="true">HALDEN</div>
+        <div class="footer__row">
+          <span>© 2026 Halden Motor Gallery · Atlanta, Georgia</span>
+          <span>Instagram · Journal · Press</span>
+          <a href="#hero" data-goto="hero">Back to the lights ↑</a>
+        </div>
+      </footer>
+    </section>
+  </main>
+  <script type="module" src="dist/app.js"></script>
+</body>
+</html>
