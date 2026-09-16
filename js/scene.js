@@ -27,7 +27,6 @@ const DEFAULT_PAINT = [
   { hex: '#b5080e', metal: 0.08, rough: 0.3 },
 ];
 
-const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
 // Give the browser a turn (input, scrolling, painting) between chunks of setup work.
 const yieldToPage = () => (globalThis.scheduler?.yield ? scheduler.yield() : new Promise((r) => setTimeout(r, 0)));
 
@@ -370,7 +369,7 @@ export class Showroom {
     culled.forEach((o) => (o.frustumCulled = true));
     this.cars.forEach((c, i) => c && (c.group.visible = saved[i]));
     this.scene_ = -2; // force setScene to re-apply visibility
-    await nextFrame();
+    await yieldToPage();
   }
 
   #addCar(model, def, index) {
