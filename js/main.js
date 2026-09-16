@@ -256,11 +256,11 @@ function frame(now) {
   if (!started) return;
 
   const sceneChanged = showroom.scene_ !== (ready ? goal.scene : -1);
-  if (motion > 0.002 || sceneChanged || showroom.isBusy(now)) lastActive = now;
+  if (motion > 0.002 || sceneChanged || showroom.isBusy(now) || showroom.needsDraw) lastActive = now;
   // Once the visit page's own background is fully opaque, nothing on the canvas can be seen.
   const covered = y > layout.visit.top + window.innerHeight * 0.6;
   const idle = now - lastActive > IDLE_AFTER;
-  if (covered || (idle && lastDrawn > lastActive)) { drewLastTick = false; showroom.applyPendingDpr(true); return; }
+  if (covered || (idle && lastDrawn > lastActive)) { drewLastTick = false; showroom.applyPendingDpr(true); return; } // a resolution change sets needsDraw, so the next tick repaints
 
   showroom.setScene(ready ? goal.scene : -1);
   showroom.light = cam.light * reveal.v;
@@ -269,6 +269,7 @@ function frame(now) {
   showroom.interacting = now < interactionUntil;
   showroom.applyPendingDpr();
   showroom.render();
+  showroom.needsDraw = false;
   // Only back-to-back frames say anything about speed; a gap after idling is not a slow frame.
   if (drewLastTick && now - startedAt > 2500) showroom.adapt((now - lastDrawn) / 1000, now);
   drewLastTick = true;

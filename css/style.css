@@ -58,7 +58,8 @@ button { font: inherit; color: inherit; }
 .muted { color: var(--bone-faint); }
 
 /* ───────── Stage layers ───────── */
-#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+/* Pinned to the large viewport: a phone address bar sliding in or out must not resize (and wipe) the canvas. */
+#stage { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; display: block; z-index: 0; }
 .vignette {
   position: fixed; inset: 0; z-index: 1; pointer-events: none;
   background:

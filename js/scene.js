@@ -8,6 +8,8 @@ const CAR_LENGTH = 4.6;
 const LINEUP_GAP = 3.1;
 const MIRROR_SCALE = 0.4; // reflection resolution relative to the canvas; it sits under a dark satin overlay
 const LAYER_DECALS = 1;   // floor overlays and dust: seen by the main camera, skipped by the mirror
+// Surfaces layered directly over bodywork: the Mustang's racing stripes (Color_04.001), badges, logos, plates.
+const DECALS = /^Color_04\.001$|badge|logo|plate|decal|emblem|stripe/i;
 
 export const CARS = [
   { key: 'mustang', file: 'mustang.glb', paint: /^Color_04$/ },
@@ -131,6 +133,7 @@ export class Showroom {
     this.scene_ = -2;
     this.viewShift = { x: 0, y: 0 };
     this.busyUntil = 0;
+    this.warmQueue = []; // phone warm-up draws waiting for the next real frame
 
     // Resolution is adaptive: start sensible, then let measured frame times move it.
     const deviceDpr = window.devicePixelRatio || 1;
@@ -141,10 +144,11 @@ export class Showroom {
     this.dpr = Math.min(this.maxDpr, mobile ? 1.25 : 1.5);
     this.perf = { acc: 0, frames: 0, good: 0, bad: 0, lockUntil: 0 };
 
+    this.#measure();
     const renderer = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: mobile, powerPreference: 'high-performance', stencil: false }));
     renderer.debug.checkShaderErrors = debug; // shader error checks force synchronous GPU round-trips
     renderer.setPixelRatio(this.dpr);
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.setSize(this.w, this.h, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -153,7 +157,7 @@ export class Showroom {
     scene.background = new THREE.Color(0x070708);
     scene.fog = new THREE.Fog(0x070708, 14, 38);
 
-    this.camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 120);
+    this.camera = new THREE.PerspectiveCamera(32, this.w / this.h, 0.1, 120);
     this.camera.position.set(6, 1.4, 6);
     this.camera.layers.enable(LAYER_DECALS);
     this.target = new THREE.Vector3(0, 0.7, 0);
@@ -190,9 +194,9 @@ export class Showroom {
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.samples });
       const composer = (this.composer = new EffectComposer(this.renderer, target));
       composer.setPixelRatio(this.dpr);
-      composer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(this.w, this.h);
       composer.addPass(new RenderPass(this.scene, this.camera));
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.5, 2.2);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(this.w, this.h), 0.3, 0.5, 2.2);
       composer.addPass(this.bloom);
       composer.addPass(new OutputPass());
     }
@@ -202,8 +206,8 @@ export class Showroom {
     const size = 60;
     if (!this.mobile) {
       const mirror = new this.addons.Reflector(new THREE.CircleGeometry(size / 2, 64), {
-        textureWidth: Math.max(256, window.innerWidth * MIRROR_SCALE * this.dpr),
-        textureHeight: Math.max(256, window.innerHeight * MIRROR_SCALE * this.dpr),
+        textureWidth: Math.max(256, this.w * MIRROR_SCALE * this.dpr),
+        textureHeight: Math.max(256, this.h * MIRROR_SCALE * this.dpr),
         color: 0x6a6a6a,
         clipBias: 0.003,
         multisample: 0,
@@ -397,29 +401,62 @@ export class Showroom {
     }
 
     // One throwaway draw of just this car resolves the remaining first-use work (uniform lookups, VAOs).
+    if (this.composer) {
+      // Desktop draws off-screen, so it can happen any time.
+      this.#throwawayDraw(carGroup, () => {
+        this.warmTarget ??= new THREE.WebGLRenderTarget(8, 8, { type: THREE.HalfFloatType });
+        r.setRenderTarget(this.warmTarget);
+        r.render(this.scene, this.camera);
+        if (root === this.scene) this.composer.render(0);
+        r.setRenderTarget(prev);
+      });
+    } else if (root === this.scene) {
+      // First car on a phone: the preloader still covers the canvas, so drawing straight to it is invisible.
+      this.#throwawayDraw(carGroup, () => this.#scissorDraw());
+    } else {
+      // Later cars on a phone draw to the live screen, so the draw rides inside the next real frame,
+      // just before that frame's full redraw covers it. Drawing between frames would flash the canvas.
+      await new Promise((resolve) => {
+        const job = { group: carGroup, resolve };
+        this.warmQueue.push(job);
+        this.needsDraw = true;
+        // If no frame comes (the canvas is covered), the screen isn't visible anyway: draw directly.
+        setTimeout(() => {
+          const i = this.warmQueue.indexOf(job);
+          if (i < 0) return;
+          this.warmQueue.splice(i, 1);
+          this.#throwawayDraw(carGroup, () => this.#scissorDraw());
+          resolve();
+        }, 1500);
+      });
+    }
+    await pause();
+  }
+
+  // Show only `group`, run `draw`, and put everything back — all in one synchronous step,
+  // so no frame the reader sees can ever catch the scene rearranged.
+  #throwawayDraw(group, draw) {
     const saved = this.cars.map((c) => c?.group.visible);
     this.cars.forEach((c) => c && (c.group.visible = false));
-    carGroup.visible = true;
+    group.visible = true;
     const culled = [];
-    carGroup.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
-    if (this.composer) {
-      this.warmTarget ??= new THREE.WebGLRenderTarget(8, 8, { type: THREE.HalfFloatType });
-      r.setRenderTarget(this.warmTarget);
-      r.render(this.scene, this.camera);
-      if (root === this.scene) this.composer.render(0);
-    } else {
-      // Screen-target shaders differ from off-screen ones; draw into a 1px scissor that the next frame overwrites.
-      r.setRenderTarget(null);
-      r.setScissorTest(true);
-      r.setScissor(0, 0, 1, 1);
-      r.render(this.scene, this.camera);
-      r.setScissorTest(false);
+    group.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+    try {
+      draw();
+    } finally {
+      culled.forEach((o) => (o.frustumCulled = true));
+      this.cars.forEach((c, i) => c && (c.group.visible = saved[i]));
     }
-    r.setRenderTarget(prev);
-    culled.forEach((o) => (o.frustumCulled = true));
-    await pause();
-    this.cars.forEach((c, i) => c && (c.group.visible = saved[i]));
-    this.scene_ = -2; // force setScene to re-apply visibility
+  }
+
+  // Screen-target shaders differ from off-screen ones, so phones warm up on the canvas itself, in a 1px scissor.
+  #scissorDraw() {
+    const r = this.renderer;
+    r.setRenderTarget(null);
+    r.setScissorTest(true);
+    r.setScissor(0, 0, 1, 1);
+    r.render(this.scene, this.camera);
+    r.setScissorTest(false);
   }
 
   #addCar(model, def, index) {
@@ -445,6 +482,8 @@ export class Showroom {
           return p;
         }
         m.envMapIntensity = 1.1;
+        // Decals sit a hair above the body they're painted on; pull them forward in depth so they win on any GPU.
+        if (DECALS.test(m.name)) Object.assign(m, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
         // Transmission (refractive glass) makes three.js re-render the whole room, mirror included, every frame.
         // Tinted transparency reads the same through dark showroom glass at a fraction of the cost.
         if (m.transmission > 0) {
@@ -531,7 +570,7 @@ export class Showroom {
 
   project(v) {
     const p = v.project(this.camera);
-    return { x: (p.x * 0.5 + 0.5) * window.innerWidth, y: (-p.y * 0.5 + 0.5) * window.innerHeight, behind: p.z > 1 };
+    return { x: (p.x * 0.5 + 0.5) * this.w, y: (-p.y * 0.5 + 0.5) * this.h, behind: p.z > 1 };
   }
 
   // cam: { theta, phi, radius, tx, ty, tz, shiftX, shiftY }
@@ -539,7 +578,7 @@ export class Showroom {
     const t = THREE.MathUtils.degToRad(cam.theta);
     const p = THREE.MathUtils.degToRad(cam.phi);
     // Portrait screens have a narrow horizontal field of view: pull back in proportion.
-    const aspect = window.innerWidth / window.innerHeight;
+    const aspect = this.w / this.h;
     const narrow = aspect < 1.1 ? Math.max(1, 1.12 / aspect) : 1;
     const r = cam.radius * narrow;
     this.target.set(cam.tx, cam.ty, cam.tz);
@@ -550,6 +589,11 @@ export class Showroom {
     );
     this.camera.lookAt(this.target);
     // The room dissolves into darkness just beyond the car, whatever the camera distance.
+    // Depth precision falls with (distance / near)², and phones view from ~2.4× further back.
+    // A near plane that scales with distance keeps stripes and trim from flickering against the paint;
+    // nothing is ever closer than this, and the room beyond `far` is already pure fog.
+    this.camera.near = Math.max(0.1, r * 0.15);
+    this.camera.far = r * 3.5 + 12;
     this.scene.fog.near = r * 1.15;
     this.scene.fog.far = r * 3.2;
     this.viewShift.x = narrow > 1 ? 0 : cam.shiftX;
@@ -558,7 +602,7 @@ export class Showroom {
   }
 
   #applyViewOffset() {
-    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+    const { w, h } = this;
     this.camera.setViewOffset(w, h, -this.viewShift.x * w, -this.viewShift.y * h, w, h);
   }
 
@@ -578,6 +622,13 @@ export class Showroom {
       this.dust.visible = L > 0.02;
       this.dust.rotation.y += dt * 0.012;
       this.dustTime.value += dt;
+    }
+    if (this.warmQueue.length) {
+      // Inside the frame, before the full redraw below paints over the 1px it touches.
+      for (const job of this.warmQueue.splice(0)) {
+        this.#throwawayDraw(job.group, () => this.#scissorDraw());
+        job.resolve();
+      }
     }
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
@@ -631,11 +682,22 @@ export class Showroom {
     this.pendingDpr = null;
     this.dpr = dpr;
     this.renderer.setPixelRatio(dpr);
-    this.onResize();
+    this.onResize(true);
   }
 
-  onResize() {
-    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+  #measure() {
+    // The canvas is pinned to the large viewport, so a phone's address bar sliding away doesn't change it.
+    this.w = Math.max(1, this.canvas.clientWidth || window.innerWidth);
+    this.h = Math.max(1, this.canvas.clientHeight || window.innerHeight);
+  }
+
+  // Resizing wipes the drawing buffer, so only do it when the canvas really changed size — and then redraw.
+  onResize(force = false) {
+    const pw = this.w, ph = this.h;
+    this.#measure();
+    if (!force && this.w === pw && this.h === ph) return;
+    const { w, h } = this;
+    this.needsDraw = true;
     this.camera.aspect = w / h;
     this.#applyViewOffset();
     this.camera.updateProjectionMatrix();

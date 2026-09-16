@@ -1,6 +1,6 @@
-// Repeat visits load from cache: models and fonts never change under the same name,
-// and code/markup is served from cache while a fresh copy is fetched for next time.
-const VERSION = 'halden-v1';
+// Models and fonts are served from cache (they never change under the same name). Code and markup go to
+// the network first, so an update is visible on the very next visit, falling back to cache when offline.
+const VERSION = 'halden-v2';
 const IMMUTABLE = /\.(glb|woff2)$/;
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -28,14 +28,14 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Everything else: answer from cache immediately, refresh in the background.
   e.respondWith((async () => {
     const cache = await caches.open(VERSION);
-    const hit = await cache.match(request);
-    const fresh = fetch(request).then((res) => {
+    try {
+      const res = await fetch(request);
       if (res.ok) cache.put(request, res.clone());
       return res;
-    }).catch(() => hit);
-    return hit || fresh;
+    } catch {
+      return (await cache.match(request)) || Response.error();
+    }
   })());
 });
