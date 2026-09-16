@@ -3,11 +3,6 @@ import * as THREE from 'three';
 import gsap from 'gsap';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { Reflector } from 'three/addons/objects/Reflector.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const CAR_LENGTH = 4.6;
 const LINEUP_GAP = 3.1;
@@ -29,6 +24,7 @@ const DEFAULT_PAINT = [
 
 // Give the browser a turn (input, scrolling, painting) between chunks of setup work.
 const yieldToPage = () => (globalThis.scheduler?.yield ? scheduler.yield() : new Promise((r) => setTimeout(r, 0)));
+
 
 function radialTexture(stops, size = 256) {
   const c = document.createElement('canvas');
@@ -138,12 +134,14 @@ export class Showroom {
 
     // Resolution is adaptive: start sensible, then let measured frame times move it.
     const deviceDpr = window.devicePixelRatio || 1;
+    // Phones draw straight to the canvas, where MSAA is cheap on tile-based GPUs — so smooth edges
+    // come from anti-aliasing rather than raw pixels, and the density can stay lower.
     this.maxDpr = Math.min(deviceDpr, mobile ? 1.5 : 2);
     this.minDpr = mobile ? 0.75 : 1;
     this.dpr = Math.min(this.maxDpr, mobile ? 1.25 : 1.5);
     this.perf = { acc: 0, frames: 0, good: 0, bad: 0, lockUntil: 0 };
 
-    const renderer = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false }));
+    const renderer = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: mobile, powerPreference: 'high-performance', stencil: false }));
     renderer.debug.checkShaderErrors = debug; // shader error checks force synchronous GPU round-trips
     renderer.setPixelRatio(this.dpr);
     renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -170,6 +168,16 @@ export class Showroom {
 
   // The room is built in small slices between yields, so the page stays responsive while the first car downloads.
   async #buildRoom() {
+    if (!this.mobile) {
+      const [{ Reflector }, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import('three/addons/objects/Reflector.js'),
+        import('three/addons/postprocessing/EffectComposer.js'),
+        import('three/addons/postprocessing/RenderPass.js'),
+        import('three/addons/postprocessing/UnrealBloomPass.js'),
+        import('three/addons/postprocessing/OutputPass.js'),
+      ]);
+      this.addons = { Reflector, EffectComposer, RenderPass, UnrealBloomPass, OutputPass };
+    }
     await yieldToPage();
     this.scene.environment = buildStudioEnvironment(this.renderer);
     await yieldToPage();
@@ -178,6 +186,7 @@ export class Showroom {
     if (!this.mobile && !this.reducedMotion) this.#buildDust();
     await yieldToPage();
     if (!this.mobile) {
+      const { EffectComposer, RenderPass, UnrealBloomPass, OutputPass } = this.addons;
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.samples });
       const composer = (this.composer = new EffectComposer(this.renderer, target));
       composer.setPixelRatio(this.dpr);
@@ -192,7 +201,7 @@ export class Showroom {
   #buildFloor() {
     const size = 60;
     if (!this.mobile) {
-      const mirror = new Reflector(new THREE.CircleGeometry(size / 2, 64), {
+      const mirror = new this.addons.Reflector(new THREE.CircleGeometry(size / 2, 64), {
         textureWidth: Math.max(256, window.innerWidth * MIRROR_SCALE * this.dpr),
         textureHeight: Math.max(256, window.innerHeight * MIRROR_SCALE * this.dpr),
         color: 0x6a6a6a,
@@ -286,7 +295,8 @@ export class Showroom {
 
   /* ───────── Loading ───────── */
 
-  // First car blocks the loader; the rest stream in behind it.
+  // Only the first car is on the critical path. On phones the other two wait for loadRest(),
+  // which the scroll director calls as the reader heads toward them.
   async load(onProgress) {
     MeshoptDecoder.useWorkers?.(Math.min(2, Math.max(1, (navigator.hardwareConcurrency || 2) - 1)));
     this.loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -298,29 +308,68 @@ export class Showroom {
     });
     await this.#buildRoom();
     const first = await downloading;
-    // Start the other downloads now that the first car has the bandwidth it needed.
-    this.rest = CARS.slice(1).map((def, i) =>
-      this.loader.loadAsync(base + def.file).then((gltf) => this.#prepare(gltf, i + 1))
-    );
+    this.base = base;
+    // Bytes cost nothing on the main thread, so the other cars start downloading straight away.
+    this.downloads = CARS.slice(1).map((def) => fetch(base + def.file).then((r) => r.arrayBuffer()));
+    // Their CPU work, though, waits: on desktop it starts now, on a phone when the reader sets off.
+    if (!this.mobile) this.loadRest();
     await this.#prepare(first, 0, onProgress);
     onProgress?.(1);
     this.setScene(0, true);
-    this.all = Promise.allSettled(this.rest);
+  }
+
+  // Load the remaining cars. Downloads start at once — bandwidth costs nothing on the main thread —
+  // while the CPU work queues up behind them, one car at a time.
+  loadRest() {
+    if (this.rest) return this.rest;
+    const queue = CARS.map((def, i) => [def, i]).slice(1);
+    const build = async ([, i], n) => {
+      const data = await this.downloads[n];
+      // Parsing geometry is one unsplittable chunk of main-thread work: spend it while the reader pauses
+      // or in the dark beat between chapters, and never wait so long that a car misses its chapter.
+      this.stallBudget = this.mobile ? 1200 : 400; // ms this car may spend waiting for a gap, in total
+      await this.#waitForGap(100);
+      const gltf = await this.loader.parseAsync(data, '');
+      return this.#prepare(gltf, i);
+    };
+    this.rest = this.mobile
+      ? queue.reduce((chain, entry, n) => chain.then(() => build(entry, n)), Promise.resolve())
+      : Promise.allSettled(queue.map(build));
+    return this.rest;
   }
 
   async #prepare(gltf, index, onProgress) {
-    await yieldToPage();
+    // The first car is what everyone is waiting for; the others are paced a slice per frame so they
+    // never cost a scrolling frame.
+    const pause = index === 0 ? yieldToPage : () => this.#pauseForFrame();
+    await pause();
     this.#addCar(gltf.scene, CARS[index], index);
     const car = this.cars[index];
     // The room itself (floor, rig, dust, bloom) is warmed together with the first car.
-    await this.#warm(index === 0 ? this.scene : car.group, car.group);
+    await this.#warm(index === 0 ? this.scene : car.group, car.group, pause);
     onProgress?.(0.95);
     this.ready[index] = true;
   }
 
+  // Background setup is spread one small slice per frame, and holds entirely while a finger is on the
+  // screen. Readers pause constantly, and the hard deadline keeps a car from ever being late for its chapter.
+  async #pauseForFrame() {
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    await this.#waitForGap(16);
+  }
+
+  // Wait for the reader to pause or the room to go dark, spending from this car's stall budget.
+  async #waitForGap(step) {
+    while (this.stallBudget > 0 && this.interacting && this.light > 0.15) {
+      const before = performance.now();
+      await new Promise((r) => setTimeout(r, step));
+      this.stallBudget -= performance.now() - before;
+    }
+  }
+
   // Compile shaders in parallel and upload textures ahead of time, so a car's first appearance costs nothing.
   // Everything is sliced into small chunks with yields between them: a reader may already be scrolling.
-  async #warm(root, carGroup) {
+  async #warm(root, carGroup, pause = yieldToPage) {
     const r = this.renderer;
     const prev = r.getRenderTarget();
     // Compile for the target the frame is really drawn into; otherwise we'd build shader variants nobody uses.
@@ -328,11 +377,12 @@ export class Showroom {
     const drawables = [];
     root.traverse((o) => { if (o.isMesh || o.isPoints) drawables.push(o); });
     const compiling = [];
-    for (let i = 0; i < drawables.length; i += 6) {
+    const chunk = pause === yieldToPage ? 6 : (this.mobile ? 2 : 4);
+    for (let i = 0; i < drawables.length; i += chunk) {
       r.setRenderTarget(into);
-      for (const o of drawables.slice(i, i + 6)) compiling.push(r.compileAsync(o, this.camera, this.scene));
+      for (const o of drawables.slice(i, i + chunk)) compiling.push(r.compileAsync(o, this.camera, this.scene));
       r.setRenderTarget(prev);
-      await yieldToPage();
+      await pause();
     }
     await Promise.all(compiling);
 
@@ -343,7 +393,7 @@ export class Showroom {
     let n = 0;
     for (const t of textures) {
       r.initTexture(t);
-      if (++n % 2 === 0) await yieldToPage();
+      if (++n % (pause === yieldToPage ? 2 : 1) === 0) await pause();
     }
 
     // One throwaway draw of just this car resolves the remaining first-use work (uniform lookups, VAOs).
@@ -367,9 +417,9 @@ export class Showroom {
     }
     r.setRenderTarget(prev);
     culled.forEach((o) => (o.frustumCulled = true));
+    await pause();
     this.cars.forEach((c, i) => c && (c.group.visible = saved[i]));
     this.scene_ = -2; // force setScene to re-apply visibility
-    await yieldToPage();
   }
 
   #addCar(model, def, index) {
@@ -567,8 +617,18 @@ export class Showroom {
     }
   }
 
+  // Changing resolution reallocates the drawing buffer, which costs a frame — so it waits for a
+  // quiet moment: the dark beat between chapters, or the reader sitting still.
   setDpr(dpr) {
-    if (dpr === this.dpr) return;
+    if (dpr === this.dpr || dpr === this.pendingDpr) return;
+    this.pendingDpr = dpr;
+  }
+
+  applyPendingDpr(force = false) {
+    const dpr = this.pendingDpr;
+    if (!dpr || dpr === this.dpr) { this.pendingDpr = null; return; }
+    if (!force && this.light > 0.15) return; // mid-chapter: hold until the lights dip or the page rests
+    this.pendingDpr = null;
     this.dpr = dpr;
     this.renderer.setPixelRatio(dpr);
     this.onResize();

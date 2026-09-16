@@ -45,9 +45,17 @@ Cars swap only while `light` is 0, so every change happens in darkness.
 ### Debugging
 Open the site with `?debug` in the URL, then run `__halden.still('roma', 0.4)` in the console to freeze on any moment. `?debug` also turns on shader error checking.
 
+## Phones
+
+- **Native scrolling.** Smooth-scrolling (Lenis) runs on desktop only. On touch devices it attaches non-passive listeners, which make every swipe wait for the main thread — the surest way to make text stutter while the 3D scene draws.
+- **Anti-aliasing instead of raw pixels.** Phones draw straight to the canvas, where MSAA is nearly free on tile-based GPUs, so edges stay clean at a lower pixel density.
+- **1.6 MB to first car.** Only the Mustang is on the critical path; the other two download during the preloader and are prepared a slice per frame, pausing whenever a finger is on the screen.
+- **Smaller textures** (512 px) via `models/mobile/`. Geometry is identical to desktop: simplifying these bodies visibly creased the Roma's hood and chipped the NSX's panel edges.
+- **No reflections, bloom or film grain** on phones.
+
 ## How it stays fast
 
-- **No loading screen.** The headline paints immediately in pure CSS. The first car downloads in parallel with the script (preload hint) and fades up out of the dark when it's ready. The other two cars stream in behind it.
+- **Short preloader.** It waits for the first car only, which downloads in parallel with the script (preload hint). The other two download behind it and are ready long before their chapters.
 - **No shader-compile freezes.** Shaders compile in parallel (`compileAsync`) for the render target they are actually drawn into. Textures upload ahead of time, and each car is drawn once off-screen before it's revealed. All of this runs in small slices that yield to the browser, so scrolling stays responsive during setup.
 - **Cheap frames:**
   - The mirror floor skips floor overlays and dust and has no MSAA of its own.
@@ -55,18 +63,25 @@ Open the site with `?debug` in the URL, then run `__halden.still('roma', 0.4)` i
   - Dust animates on the GPU.
 - **Draws only when needed.** Rendering stops once the camera settles, and while the visit section covers the canvas.
 - **Adaptive resolution.** If frame times slip, pixel density steps down and bloom is the last thing dropped. On a fast device, density steps back up.
-- **Lighter phones.** Phones get smaller models, no reflections or bloom, and no film grain.
+- **Lighter phones.** See above.
+- **Instant repeat visits.** A service worker (`sw.js`) caches models and fonts. **If you replace a model or a font, bump `VERSION` in `sw.js`** — otherwise returning visitors keep the old file.
+- **The preloader doesn't hide the page from the browser.** Its wordmark paints immediately, so the page still counts as painted early.
 
-Measured on this build (headless Edge, AMD RX 5500 XT; "phone" = 4× CPU slowdown, 4G, 390×844 @2×):
+Measured on this build (headless Edge, AMD RX 5500 XT; phone = 4× CPU slowdown, 4G, 390×844 @2×):
 
 | | Desktop | Phone simulation |
 |---|---|---|
-| Headline painted (LCP) | ~0.5–0.9 s | 1.1 s |
-| First car ready | 1.6–1.9 s | 3.0 s |
-| All three cars ready | 2.0 s | 5.9 s |
-| Average frame rate, scrolling the whole page | 178 fps | 82 fps |
-| Frames over 34 ms | 1 of 4,999 | 4 of 2,290 |
-| Long tasks while scrolling | 0 | 0 |
+| Wordmark painted | ~0.3 s | ~1.1 s |
+| First car ready (preloader lifts) | ~1.6 s | ~3.2 s |
+| Other two cars ready | ~2 s | 2.3 s / 4.7 s after the reader sets off |
+| Bytes before the first car | ~2.1 MB | **1.65 MB** |
+| Repeat visit, painted | — | **0.42 s** |
+| Average frame rate, scrolling the whole page | ~190 fps | ~85 fps |
+| Frames over 34 ms | 2–7 of ~5,000 | ~20 of ~2,300 |
+
+A real phone's GPU is slower than the desktop card used here, so treat the phone column as a CPU-and-network simulation. Adaptive resolution is what protects a weaker device.
+
+Known limitation: preparing each background car includes one unsplittable parse of its geometry (~100–200 ms of main thread). It is scheduled for a pause or a dark beat between chapters. Moving glTF parsing to a Web Worker would remove it entirely.
 
 ## Model pipeline
 
@@ -74,7 +89,7 @@ The source models were compressed with [glTF-Transform](https://gltf-transform.d
 - meshopt geometry compression
 - WebP textures, capped at 1024 px (512 px for `models/mobile/`)
 
-The Mustang was simplified (353K → 96K triangles on desktop, 77K on mobile). The NSX and Roma keep full geometry, because simplification visibly faceted their bodywork. The Roma was converted from FBX with FBX2glTF, and its materials are corrected at load time in `tuneRomaMaterial()`.
+The Mustang was simplified (353K → 96K triangles). The NSX and Roma keep full geometry, because simplification visibly faceted their bodywork. Phone models share that geometry and differ only in texture size. The Roma was converted from FBX with FBX2glTF, and its materials are corrected at load time in `tuneRomaMaterial()`.
 
 ## Before going live
 - The booking form only validates in the browser. Connect it to a real endpoint or CRM in `js/main.js`, in the "Booking form" block.

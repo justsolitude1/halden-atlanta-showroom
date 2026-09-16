@@ -18,6 +18,16 @@
   <link rel="modulepreload" href="dist/app.js">
 </head>
 <body>
+  <div class="loader" id="loader" role="status" aria-live="polite">
+    <div class="loader__mark">HALDEN</div>
+    <p class="loader__sub">Atlanta Motor Gallery</p>
+    <div class="loader__row">
+      <span class="loader__label" id="loaderLabel">Warming up the room</span>
+      <span class="loader__pct"><span id="loaderPct">0</span>%</span>
+    </div>
+    <div class="loader__bar"><i id="loaderBar"></i></div>
+  </div>
+
   <canvas id="stage" aria-hidden="true"></canvas>
   <div class="grain" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
@@ -60,11 +70,6 @@
       <div class="hero__foot">
         <p class="hero__lede">Sixty years of speed from three countries, lit like a gallery and parked inside the Perimeter.</p>
         <div class="hero__status">
-          <div class="boot" id="loader" role="status" aria-live="polite">
-            <span class="boot__label">Warming up the room</span>
-            <span class="boot__pct"><span id="loaderPct">0</span>%</span>
-            <span class="boot__bar"><i id="loaderBar"></i></span>
-          </div>
           <div class="scrollcue"><i></i><span>Scroll to turn on the lights</span></div>
         </div>
       </div>

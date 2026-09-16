@@ -131,10 +131,13 @@ const showroom = new Showroom(canvas, { mobile, reducedMotion, debug, msaa: debu
 const cam = { ...SCRIPT[0] };
 const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
 
+// Smooth wheel scrolling is a desktop nicety. On touch devices Lenis would attach non-passive touch
+// listeners, which make every swipe wait for the main thread — the surest way to make text stutter.
 let lenis = null;
-if (!reducedMotion) {
+if (!reducedMotion && !mobile) {
   lenis = new Lenis({ duration: 1.25, easing: (t) => 1 - Math.pow(1 - t, 4), smoothWheel: true, autoRaf: false });
   lenis.on('scroll', ScrollTrigger.update);
+  lenis.stop(); // the preloader is up; nothing scrolls yet
 }
 gsap.ticker.lagSmoothing(0);
 const scrollTo = (id) => {
@@ -144,6 +147,13 @@ const scrollTo = (id) => {
   lenis ? lenis.scrollTo(y, { duration: 2.2 }) : window.scrollTo({ top: y, behavior: reducedMotion ? 'auto' : 'smooth' });
 };
 $$('[data-goto]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); scrollTo(el.dataset.goto); }));
+
+let interactionUntil = 0;
+const markInteraction = () => { interactionUntil = performance.now() + 250; showroom.interacting = true; };
+for (const type of ['touchstart', 'touchmove', 'wheel', 'scroll']) {
+  window.addEventListener(type, markInteraction, { passive: true });
+}
+window.addEventListener('touchend', () => { interactionUntil = performance.now() + 400; }, { passive: true });
 
 window.addEventListener('pointermove', (e) => {
   pointer.x = e.clientX / window.innerWidth - 0.5;
@@ -170,17 +180,23 @@ showroom.load((p) => {
   started = true;
   startedAt = performance.now();
   document.documentElement.classList.add('is-ready');
+  lenis?.start();
   if (!reducedMotion) {
     gsap.to(reveal, { v: 1, duration: 1.8, ease: 'power2.inOut' });
     showroom.busyUntil = performance.now() + 1900;
   }
 }).catch((err) => {
   console.error(err);
-  $('.boot__label').textContent = 'The room could not load. Please refresh.';
+  $('#loaderLabel').textContent = 'The room could not load. Please refresh.';
 });
 
 // Late font swaps change text metrics; re-measure once the real faces are in.
 document.fonts?.ready.then(() => { measure(); ScrollTrigger.refresh(); });
+
+// Repeat visits come straight from the cache.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 
 /* ───────── Frame loop ───────── */
 const hotspotEls = HOTSPOTS.map((h) => {
@@ -198,6 +214,7 @@ let lastActive = 0;
 let activeSection = '';
 let frozen = false;
 let drewLastTick = false;
+let restRequested = false;
 const stepState = {};
 const IDLE_AFTER = 1000; // ms of stillness before the canvas stops redrawing
 
@@ -213,7 +230,8 @@ function frame(now) {
   pendingEl.hidden = ready || !started;
 
   // Critically damped follow; scroll sets the intent, the camera catches up like a dolly.
-  const k = reducedMotion ? 1 : 1 - Math.exp(-dt * 5.5);
+  // Phones scroll on the compositor, so the camera chases a little harder to stay with the text.
+  const k = reducedMotion ? 1 : 1 - Math.exp(-dt * (mobile ? 9 : 5.5));
   let motion = 0;
   for (const key of NUMERIC) {
     const d = goal[key] - cam[key];
@@ -229,6 +247,11 @@ function frame(now) {
   }
 
   updateChapters(y);
+  if (started && !restRequested && (y > 40 || now - startedAt > 2500)) {
+    // The reader is moving (or has settled in): fetch the cars for the chapters ahead.
+    restRequested = true;
+    showroom.loadRest();
+  }
   drewLastTick = drewLastTick && started;
   if (!started) return;
 
@@ -237,12 +260,14 @@ function frame(now) {
   // Once the visit page's own background is fully opaque, nothing on the canvas can be seen.
   const covered = y > layout.visit.top + window.innerHeight * 0.6;
   const idle = now - lastActive > IDLE_AFTER;
-  if (covered || (idle && lastDrawn > lastActive)) { drewLastTick = false; return; }
+  if (covered || (idle && lastDrawn > lastActive)) { drewLastTick = false; showroom.applyPendingDpr(true); return; }
 
   showroom.setScene(ready ? goal.scene : -1);
   showroom.light = cam.light * reveal.v;
   showroom.bars = cam.bars * reveal.v;
   showroom.applyCamera({ ...cam, theta: cam.theta + pointer.sx * 6, phi: cam.phi - pointer.sy * 3 });
+  showroom.interacting = now < interactionUntil;
+  showroom.applyPendingDpr();
   showroom.render();
   // Only back-to-back frames say anything about speed; a gap after idling is not a slow frame.
   if (drewLastTick && now - startedAt > 2500) showroom.adapt((now - lastDrawn) / 1000, now);
